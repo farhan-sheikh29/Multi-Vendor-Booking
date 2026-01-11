@@ -1,4 +1,4 @@
-# BookingHub - Multi-Vendor Booking & Scheduling System
+# BookingHub - The Multi-Vendor Booking & Scheduling System
 
 A production-grade, full-stack booking and scheduling platform built with Next.js 14, TypeScript, Prisma, PostgreSQL, and Redis.
 
