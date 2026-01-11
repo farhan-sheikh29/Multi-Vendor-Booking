@@ -1,0 +1,314 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  PARTIALLY_REFUNDED
+  FAILED
+}
+
+enum VendorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  password      String
+  role          UserRole  @default(CUSTOMER)
+  emailVerified DateTime?
+  image         String?
+  phone         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  vendor        Vendor?
+  bookings      Booking[]
+  notifications Notification[]
+  reviews       Review[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  slug        String    @unique
+  image       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  services    Service[]
+
+  @@index([slug])
+}
+
+model Vendor {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  businessName    String
+  description     String?      @db.Text
+  address         String?
+  city            String?
+  state           String?
+  country         String?
+  zipCode         String?
+  phone           String?
+  website         String?
+  logo            String?
+  status          VendorStatus @default(PENDING)
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  
+  // Calendar sync
+  googleCalendarId     String?
+  googleRefreshToken   String?
+  outlookCalendarId    String?
+  outlookRefreshToken  String?
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services        Service[]
+  availability    VendorAvailability[]
+  specialHours    SpecialHours[]
+  bookings        Booking[]
+  reviews         Review[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  vendorId    String
+  categoryId  String
+  name        String
+  description String?  @db.Text
+  duration    Int      // in minutes
+  price       Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  isActive    Boolean  @default(true)
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoryId], references: [id])
+  bookings    Booking[]
+
+  @@index([vendorId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model VendorAvailability {
+  id        String   @id @default(cuid())
+  vendorId  String
+  dayOfWeek Int      // 0 = Sunday, 6 = Saturday
+  startTime String   // HH:mm format
+  endTime   String   // HH:mm format
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, dayOfWeek, startTime])
+  @@index([vendorId])
+}
+
+model SpecialHours {
+  id        String   @id @default(cuid())
+  vendorId  String
+  date      DateTime @db.Date
+  startTime String?  // HH:mm format, null means day off
+  endTime   String?  // HH:mm format
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, date])
+  @@index([vendorId])
+  @@index([date])
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  customerId      String
+  vendorId        String
+  serviceId       String
+  startTime       DateTime
+  endTime         DateTime
+  status          BookingStatus @default(PENDING)
+  notes           String?       @db.Text
+  cancellationReason String?    @db.Text
+  
+  // Payment
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  paidAmount      Decimal       @db.Decimal(10, 2) @default(0)
+  paymentStatus   PaymentStatus @default(PENDING)
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  customer        User          @relation(fields: [customerId], references: [id])
+  vendor          Vendor        @relation(fields: [vendorId], references: [id])
+  service         Service       @relation(fields: [serviceId], references: [id])
+  payment         Payment?
+  review          Review?
+
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([serviceId])
+  @@index([startTime])
+  @@index([status])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  bookingId         String        @unique
+  stripePaymentId   String?       @unique
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("USD")
+  status            PaymentStatus @default(PENDING)
+  paymentMethod     String?
+  refundAmount      Decimal?      @db.Decimal(10, 2)
+  refundReason      String?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([stripePaymentId])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  bookingId  String   @unique
+  customerId String
+  vendorId   String
+  rating     Int      // 1-5
+  comment    String?  @db.Text
+  response   String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer   User     @relation(fields: [customerId], references: [id])
+  vendor     Vendor   @relation(fields: [vendorId], references: [id])
+
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([rating])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String   @db.Text
+  type      String   // email, sms, push
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model SlotLock {
+  id         String   @id @default(cuid())
+  vendorId   String
+  startTime  DateTime
+  endTime    DateTime
+  sessionId  String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@unique([vendorId, startTime])
+  @@index([vendorId])
+  @@index([sessionId])
+  @@index([expiresAt])
+}
